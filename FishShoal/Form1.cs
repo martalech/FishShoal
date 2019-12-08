@@ -18,6 +18,27 @@ namespace FishShoal
     public partial class Form1 : Form
     {
         bool GPU = true;
+
+        DateTime _lastTime; // marks the beginning the measurement began
+        int _framesRendered; // an increasing count
+        int _fps; // the FPS calculated from the last measurement
+
+        void CalcFrames()
+        {
+            _framesRendered++;
+
+            if ((DateTime.Now - _lastTime).TotalSeconds >= 1)
+            {
+                // one second has elapsed 
+
+                _fps = _framesRendered;
+                _framesRendered = 0;
+                _lastTime = DateTime.Now;
+            }
+            label1.Text = _fps.ToString() + " FPS";
+            // draw FPS on screen here using current value of _fps          
+        }
+
         public int FishNumber = 5120, SquareSize = 100, WindowWidth, WindowHeight, SquaresNumber, SquaresInRow;
         public static Vector2 Mouse { get; set; } = new Vector2(-1, -1);
         public double[] positionsx;
@@ -145,7 +166,7 @@ namespace FishShoal
             int i = ss[s_id];
             if (i >= 0)
             {
-                while (i < squares_number && sf[i, 0] == s_id)
+                while (sf[i, 0] == s_id)
                 {
                     if (sf[i, 1] != ind)
                     {
@@ -157,6 +178,8 @@ namespace FishShoal
                         }
                     }
                     i++;
+                    if (i >= squares_number)
+                        return;
                 }
             }
         }
@@ -218,7 +241,6 @@ namespace FishShoal
             if (s_id < 0 || s_id >= squaresnumber)
                 return;
             int i = ss[s_id];
-            Console.WriteLine("i: {0}", i);
             if (i >= 0)
             {
                 while (i < squaresnumber && sf[i, 0] == s_id)
@@ -233,6 +255,8 @@ namespace FishShoal
                         }
                     }
                     i++;
+                    if (i >= squaresnumber)
+                        return;
                 }
             }
         }
@@ -312,6 +336,8 @@ namespace FishShoal
                         }
                     }
                     i++;
+                    if (i >= squaresnumber)
+                        return;
                 }
             }
         }
@@ -421,6 +447,7 @@ namespace FishShoal
                 var y = positionsy[i];
                 graphics.DrawEllipse(new Pen(Brushes.Orange, 1), (float)positionsx[i], (float)positionsy[i], 5, 5);
             }
+            CalcFrames();
         }
 
         private static void UpdateFish(double[] px, double[] py, double[] vx, double[] vy, double[] ax, double[] ay, int ind, int width, int height, float mx, float my)
@@ -462,6 +489,7 @@ namespace FishShoal
             fishinsquere = new int[FishNumber];
             squarestart = new int[SquaresNumber];
             squarefish = new int[FishNumber, 2];
+            bitmap = new byte[WindowWidth, WindowHeight];
             for (int i = 0; i < FishNumber; i++)
             {
                 var r1 = random.Next(-10, 10);
@@ -482,7 +510,6 @@ namespace FishShoal
                 accelerationsy[i] = 0;
             }
             UpdateSquares(squarefish, squarestart, fishinsquere, positionsx, positionsy, FishNumber, SquaresNumber, SquareSize, WindowWidth);
-
             Timer timer = new Timer();
             timer.Interval = 10;
             timer.Tick += Timer_Tick;
