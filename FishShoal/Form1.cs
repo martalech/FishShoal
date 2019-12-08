@@ -12,46 +12,32 @@ using Alea.CSharp;
 using Alea.Parallel;
 using Alea;
 using System.Diagnostics;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 
 namespace FishShoal
 {
     public partial class Form1 : Form
     {
-        bool GPU = true;
+        private bool GPU = true;
+        private bool drawOnGpu = true;
 
-        DateTime _lastTime; // marks the beginning the measurement began
-        int _framesRendered; // an increasing count
-        int _fps; // the FPS calculated from the last measurement
-
-        void CalcFrames()
-        {
-            _framesRendered++;
-
-            if ((DateTime.Now - _lastTime).TotalSeconds >= 1)
-            {
-                // one second has elapsed 
-
-                _fps = _framesRendered;
-                _framesRendered = 0;
-                _lastTime = DateTime.Now;
-            }
-            label1.Text = _fps.ToString() + " FPS";
-            // draw FPS on screen here using current value of _fps          
-        }
-
-        public int FishNumber = 5120, SquareSize = 100, WindowWidth, WindowHeight, SquaresNumber, SquaresInRow;
+        private int FishNumber = 20480, SquareSize = 100, WindowWidth, WindowHeight, SquaresNumber, SquaresInRow;
         public static Vector2 Mouse { get; set; } = new Vector2(-1, -1);
-        public double[] positionsx;
-        public double[] positionsy;
-        public double[] velocitiesx;
-        public double[] velocitiesy;
-        public double[] accelerationsx;
-        public double[] accelerationsy;
-        public int[,] squarefish;
-        public int[] fishinsquere;
-        public int[] squarestart;
-        public byte[,] bitmap;
-        public Random random;
+        private Clock clock = new Clock();
+
+        private double[] positionsx;
+        private double[] positionsy;
+        private double[] velocitiesx;
+        private double[] velocitiesy;
+        private double[] accelerationsx;
+        private double[] accelerationsy;
+        private int[,] squarefish;
+        private int[] fishinsquere;
+        private int[] squarestart;
+        private int[] bitmap;
+
+        private Random random;
 
         private static void UpdateSquares(int[,] sf, int[] ss, int[] fis, double[] px, double[] py, int fish_number,
             int squares_number, int square_size, int window_width)
@@ -100,11 +86,9 @@ namespace FishShoal
         }
 
         private static void Kernel(double[] px, double[] py, double[] vx, double[] vy, double[] ax, double[] ay, int width, int height, float mx, float my,
-            int[,] sf, int[] ss, int[] fis, int sir, int sn)
+            int[,] sf, int[] ss, int[] fis, int sir, int sn, int[] bitmap)
         {
             int ind = blockIdx.x * blockDim.x + threadIdx.x;
-            Edges(px, py, ind, width, height);
-            DeviceFunction.SyncThreads();
             AlignWithOtherFish(px, py, vx, vy, ax, ay, ind, sf, ss, fis, sir, sn);
             DeviceFunction.SyncThreads();
             CohesionWithOtherFish(px, py, vx, vy, ax, ay, ind, ss, sf, fis, sn, sir);
@@ -114,10 +98,16 @@ namespace FishShoal
                 AvoidMouse(px, py, vx, vy, ax, ay, ind, mx, my);
             DeviceFunction.SyncThreads();
             UpdateFish(px, py, vx, vy, ax, ay, ind, width, height, mx, my);
+            Edges(px, py, ind, width, height);
+            DeviceFunction.SyncThreads();
+            int col = (0 << 24) + (0 << 16) + (255 << 8) + 255;
+            int x = (int)px[ind];
+            int y = (int)py[ind];
+            circleBres(x, y, 2, bitmap, width, height, col);
         }
 
         private static void KernelCpu(double[] px, double[] py, double[] vx, double[] vy, double[] ax, double[] ay, int width, int height, float mx, float my,
-            int[,] sf, int[] ss, int[] fis, int sir, int sn, int ind)
+            int[,] sf, int[] ss, int[] fis, int sir, int sn, int ind, int[] bitmap)
         {
             AlignWithOtherFish(px, py, vx, vy, ax, ay, ind, sf, ss, fis, sir, sn);
             CohesionWithOtherFish(px, py, vx, vy, ax, ay, ind, ss, sf, fis, sn, sir);
@@ -126,17 +116,24 @@ namespace FishShoal
                 AvoidMouse(px, py, vx, vy, ax, ay, ind, mx, my);
             UpdateFish(px, py, vx, vy, ax, ay, ind, width, height, mx, my);
             Edges(px, py, ind, width, height);
+            int col = (0 << 24) + (0 << 16) + (255 << 8) + 255;
+            int x = (int)px[ind];
+            int y = (int)py[ind];
+            circleBres(x, y, 2, bitmap, width, height, col);
         }
 
         [GpuManaged]
         private void RunGpu()
         {
             var gpu = Alea.Gpu.Default;
-            gpu.Launch(Kernel, new Alea.LaunchParam(10, 512), positionsx, positionsy,
+            gpu.Launch(Kernel, new Alea.LaunchParam(40, 512), positionsx, positionsy,
                 velocitiesx, velocitiesy, accelerationsx, accelerationsy, WindowWidth, WindowHeight, Mouse.X, Mouse.Y, squarefish, squarestart,
-                fishinsquere, SquaresInRow, SquaresNumber);
+                fishinsquere, SquaresInRow, SquaresNumber, bitmap);
             UpdateSquares(squarefish, squarestart, fishinsquere, positionsx, positionsy, FishNumber, SquaresNumber, SquareSize, WindowWidth);
-            pictureBox1.Invalidate();
+            if (!drawOnGpu)
+                pictureBox1.Invalidate();
+            else
+                DrawFish();
         }
 
         private void RunCpu()
@@ -144,7 +141,7 @@ namespace FishShoal
             for (int i = 0; i < FishNumber; i++)
             {
                 KernelCpu(positionsx, positionsy, velocitiesx, velocitiesy, accelerationsx, accelerationsy, WindowWidth,
-                    WindowHeight, Mouse.X, Mouse.Y, squarefish, squarestart, fishinsquere, SquaresInRow, SquaresNumber, i);
+                    WindowHeight, Mouse.X, Mouse.Y, squarefish, squarestart, fishinsquere, SquaresInRow, SquaresNumber, i, bitmap);
             }
             UpdateSquares(squarefish, squarestart, fishinsquere, positionsx, positionsy, FishNumber, SquaresNumber, SquareSize, WindowWidth);
             pictureBox1.Invalidate();
@@ -181,6 +178,50 @@ namespace FishShoal
                     if (i >= squares_number)
                         return;
                 }
+            }
+        }
+
+        private static bool IsInBorder(int x, int y, int width, int height)
+        {
+            return x > 0 && x < width && y > 0 && y < height;
+        }
+
+        private static void drawCircle(int xc, int yc, int x, int y, int width, int height, int col, int[] bitmap)
+        {
+            if (IsInBorder(xc + x, yc + y, width, height))
+                bitmap[(yc + y) * width + xc + x] = col;
+            if (IsInBorder(xc - x, yc + y, width, height))
+                bitmap[(yc + y) * width + xc - x] = col;
+            if (IsInBorder(xc + x, yc - y, width, height))
+                bitmap[(yc - y) * width + xc + x] = col;
+            if (IsInBorder(xc - x, yc - y, width, height))
+                bitmap[(yc - y) * width + xc - x] = col;
+            if (IsInBorder(xc + y, yc + x, width, height))
+                bitmap[(yc + x) * width + xc + y] = col;
+            if (IsInBorder(xc - y, yc + x, width, height))
+                bitmap[(yc + x) * width + xc - y] = col;
+            if (IsInBorder(xc + y, yc - x, width, height))
+                bitmap[(yc - x) * width + xc + y] = col;
+            if (IsInBorder(xc - y, yc - x, width, height))
+                bitmap[(yc - x) * width + xc - y] = col;
+        }
+
+        private static void circleBres(int xc, int yc, int r, int[] bitmap, int width, int height, int col)
+        {
+            int x = 0, y = r;
+            int d = 3 - 2 * r;
+            drawCircle(xc, yc, x, y, width, height, col, bitmap);
+            while (y >= x)
+            {
+                x++;
+                if (d > 0)
+                {
+                    y--;
+                    d = d + 4 * (x - y) + 10;
+                }
+                else
+                    d = d + 4 * x + 6;
+                drawCircle(xc, yc, x, y, width, height, col, bitmap);
             }
         }
 
@@ -230,9 +271,8 @@ namespace FishShoal
 
         private static double vectorlength(double x1, double y1, double x2, double y2)
         {
-            var lol = DeviceFunction.Sqrt((DeviceFunction.Abs(x2 - x1) * DeviceFunction.Abs(x2 - x1))
+            return DeviceFunction.Sqrt((DeviceFunction.Abs(x2 - x1) * DeviceFunction.Abs(x2 - x1))
                 + (DeviceFunction.Abs(y2 - y1) * DeviceFunction.Abs(y2 - y1)));
-           return lol;
         }
 
         private static void CohesionHelperFunc(int s_id, double[] px, double[] py, int ind, int[] ss, int [,] sf, int[] fis,
@@ -322,7 +362,7 @@ namespace FishShoal
                     if (sf[i, 1] != ind)
                     {
                         double distance;
-                        if ((distance = vectorlength(px[ind], py[ind], px[sf[i, 1]], py[sf[i, 1]])) <= 50)
+                        if ((distance = vectorlength(px[ind], py[ind], px[sf[i, 1]], py[sf[i, 1]])) <= 80)
                         {
                             double diffx = px[ind] - px[sf[i, 1]];
                             double diffy = py[ind] - py[sf[i, 1]];
@@ -439,15 +479,30 @@ namespace FishShoal
             Mouse = new Vector2(e.Location.X, e.Location.Y);
         }
 
-        private void DrawFish(Graphics graphics)
+        private void DrawFish(Graphics graphics = null)
         {
-            for (int i = 0; i < 5120; i++)
+            if (drawOnGpu)
             {
-                var x = positionsx[i];
-                var y = positionsy[i];
-                graphics.DrawEllipse(new Pen(Brushes.Orange, 1), (float)positionsx[i], (float)positionsy[i], 5, 5);
+                if (bitmap != null)
+                {
+                    Bitmap bmp = new Bitmap(WindowWidth, WindowHeight);
+                    var data = bmp.LockBits(new Rectangle(Point.Empty, bmp.Size), ImageLockMode.WriteOnly, PixelFormat.Format32bppRgb);
+                    Marshal.Copy(bitmap, 0, data.Scan0, bitmap.Length);
+                    bmp.UnlockBits(data);
+                    pictureBox1.Image = bmp;
+                }
             }
-            CalcFrames();
+            else
+            {
+                for (int i = 0; i < FishNumber; i++)
+                {
+                    var x = positionsx[i];
+                    var y = positionsy[i];
+                    graphics.DrawEllipse(new Pen(Brushes.Orange, 1), (float)positionsx[i], (float)positionsy[i], 5, 5);
+                }
+            }
+            bitmap = new int[WindowWidth * WindowHeight];
+            label1.Text = clock.CalcFrames();
         }
 
         private static void UpdateFish(double[] px, double[] py, double[] vx, double[] vy, double[] ax, double[] ay, int ind, int width, int height, float mx, float my)
@@ -469,15 +524,13 @@ namespace FishShoal
             ay[ind] = 0;
         }
 
-        private void pictureBox1_LoadCompleted(object sender, AsyncCompletedEventArgs e)
-        {
-        }
-
-        private void Form1_Load(object sender, EventArgs e)
+        private void OnFormLoad(object sender, EventArgs e)
         {
             random = new Random();
+            pictureBox1.SizeMode = PictureBoxSizeMode.Normal;
             WindowWidth = pictureBox1.Width;
             WindowHeight = pictureBox1.Height;
+            bitmap = new int[WindowWidth * WindowHeight];
             SquaresNumber = (int)Math.Ceiling((double)WindowHeight / SquareSize) * (int)Math.Ceiling((double)WindowWidth / SquareSize);
             SquaresInRow = (WindowWidth / SquareSize);
             positionsx = new double[FishNumber];
@@ -489,7 +542,7 @@ namespace FishShoal
             fishinsquere = new int[FishNumber];
             squarestart = new int[SquaresNumber];
             squarefish = new int[FishNumber, 2];
-            bitmap = new byte[WindowWidth, WindowHeight];
+
             for (int i = 0; i < FishNumber; i++)
             {
                 var r1 = random.Next(-10, 10);
@@ -516,15 +569,18 @@ namespace FishShoal
             timer.Start();
         }
 
-        private void pictureBox1_MouseLeave(object sender, EventArgs e)
+        private void OnPictureBoxMouseLeave(object sender, EventArgs e)
         {
             Mouse = new Vector2(-1, -1);
         }
 
         private void OnPictureBoxPaint(object sender, PaintEventArgs e)
         {
-            var graphics = e.Graphics;
-            DrawFish(graphics);
+            if (!drawOnGpu)
+            {
+                var graphics = e.Graphics;
+                DrawFish(graphics);
+            }
         }
     }
 }
