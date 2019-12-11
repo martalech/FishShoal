@@ -38,6 +38,9 @@
   <PropertyGroup>
     <StartupObject />
   </PropertyGroup>
+  <PropertyGroup>
+    <ApplicationIcon>Apathae-Poisson-2-Fish.ico</ApplicationIcon>
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="Alea, Version=3.0.0.0, Culture=neutral, PublicKeyToken=ba52afc3c2e933d6, processorArchitecture=MSIL">
       <HintPath>..\packages\Alea.3.0.4\lib\net45\Alea.dll</HintPath>
@@ -65,8 +68,11 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="CircleDrawing.cs" />
     <Compile Include="Clock.cs" />
+    <Compile Include="FishCPU.cs" />
     <Compile Include="FishFunc.cs" />
+    <Compile Include="FishGPU.cs" />
     <Compile Include="Form1.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -99,9 +105,12 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="App.config" />
+    <None Include="App.config">
+      <SubType>Designer</SubType>
+    </None>
   </ItemGroup>
   <ItemGroup>
+    <Content Include="Apathae-Poisson-2-Fish.ico" />
     <Content Include="FodyWeavers.xml" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
