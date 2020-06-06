@@ -22,7 +22,7 @@ namespace FishShoal
                 width, height, mousex, mousey);
             FishFunctions.Edges(positionsx, positionsy, ind, width, height);
             DeviceFunction.SyncThreads();
-            int col = (0 << 24) + (0 << 16) + (255 << 8) + 255;
+            int col = (255 << 24) + (0 << 16) + (255 << 8) + 255;
             int x = (int)positionsx[ind];
             int y = (int)positionsy[ind];
             CircleDrawing.CircleBresenham(x, y, 2, bitmap, width, height, col);
